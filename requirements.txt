@@ -1,3 +1,4 @@
+--prefer-binary
 aiogram==3.4.1
 Flask==3.0.3
 aiosqlite==0.20.0
