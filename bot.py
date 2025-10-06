@@ -204,6 +204,7 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 # --- Render keep-alive workaround ---
+# --- Render keep-alive workaround ---
 import threading
 from flask import Flask
 
@@ -216,5 +217,8 @@ def keep_alive():
 
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
 
-keep_alive()
+keep_alive()  # ⬅️ вызываем до запуска бота
 # --- end workaround ---
+
+if __name__ == "__main__":
+    asyncio.run(main())
