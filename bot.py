@@ -14,7 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
- DB_PATH = os.getenv("DB_PATH", "/tmp/bank.sqlite")# persistent on Railway volume
+ DB_PATH = os.getenv("DB_PATH", "/tmp/bank.sqlite")
 MIN_BET, MAX_BET = 100, 5000
 MULT_SIDE = 1.75
 MULT_EDGE = 8.0
