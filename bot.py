@@ -4,17 +4,16 @@ from aiogram.types import Message, PreCheckoutQuery, LabeledPrice, CallbackQuery
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties  # <-- добавили
 
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
-from aiogram.client.default import DefaultBotProperties
-
-bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))  # <-- заменили
 dp = Dispatcher()
 
- DB_PATH = os.getenv("DB_PATH", "/tmp/bank.sqlite")
+DB_PATH = os.getenv("DB_PATH", "/tmp/bank.sqlite")  # <-- НИ ОДНОГО пробела перед этой строкой
 MIN_BET, MAX_BET = 100, 5000
 MULT_SIDE = 1.75
 MULT_EDGE = 8.0
