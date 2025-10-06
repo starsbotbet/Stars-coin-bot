@@ -12,32 +12,28 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 
-# ===================== CONFIG =====================
+# ===================== CONFIG (рабочая версия до изменений) =====================
 
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
-# На бесплатном Render постоянного диска нет — по умолчанию кладём БД в /tmp.
-# Если подключишь Volume, задай в переменных окружения: DB_PATH=/data/bank.sqlite
+# Render free: без постоянного диска, поэтому по умолчанию /tmp
 DB_PATH = os.getenv("DB_PATH", "/tmp/bank.sqlite")
 
 MIN_BET, MAX_BET = 100, 5000
-MULT_SIDE = 1.75     # коэффициент за угаданную сторону
-MULT_EDGE = 8.0      # коэффициент за ребро
+MULT_SIDE = 1.75   # коэффициент за угаданную сторону
+MULT_EDGE = 8.0    # коэффициент за ребро (если выпало ребро)
 
-# Вероятности (проверяемая честность): 49.5% / 49.5% / 1%
+# Вероятности (проверяемая честность) — в тексте правила их показываем
 P_HEADS = 0.495
-P_EDGE  = 0.010      # P_TAILS = 1 - P_HEADS - P_EDGE = 0.495
-
-# Для тестов без реальных платежей:
-ADMIN_ID = 123456789  # <-- замени на свой Telegram user_id
+P_EDGE  = 0.010   # P_TAILS = 0.495
 
 bot = Bot(TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# временно храним выбор стороны пользователя
-pending_choice: dict[int, str] = {}  # user_id -> 'heads'|'tails'|'edge'
+# временно храним выбор стороны
+pending_choice: dict[int, str] = {}  # user_id -> 'heads'|'tails'
 
 
 # ===================== DB =====================
@@ -62,26 +58,7 @@ async def db_init():
             payout INTEGER,
             ts DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
-        # Депозиты Stars (для будущего refund при выводе)
-        await db.execute("""CREATE TABLE IF NOT EXISTS deposits(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            charge_id TEXT,
-            amount INTEGER,
-            refunded INTEGER NOT NULL DEFAULT 0,
-            ts DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-        # Заявки на вывод сверх внесённых депозитов (ручная обработка)
-        await db.execute("""CREATE TABLE IF NOT EXISTS withdrawals(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            amount INTEGER,
-            auto_refunded INTEGER,
-            status TEXT DEFAULT 'pending',
-            ts DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
         await db.commit()
-
 
 async def get_balance(uid: int) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -92,7 +69,6 @@ async def get_balance(uid: int) -> int:
             await db.commit()
             return 0
         return int(row[0])
-
 
 async def add_balance(uid: int, delta: int):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -140,11 +116,9 @@ def main_menu_kb(balance: int):
     kb = InlineKeyboardBuilder()
     kb.button(text="Орёл",  callback_data="side:heads")
     kb.button(text="Решка", callback_data="side:tails")
-    kb.button(text="Ребро", callback_data="side:edge")
     kb.button(text="Пополнить (1000 XTR)", callback_data="dep:1000")
     kb.button(text="Пополнить (5000 XTR)", callback_data="dep:5000")
-    kb.button(text=f"Вывести ({balance} XTR)", callback_data="withdraw")
-    kb.adjust(3, 2, 1)
+    kb.adjust(2, 2)
     return kb.as_markup()
 
 
@@ -154,9 +128,10 @@ async def cmd_start(m: Message):
     await m.answer(
         "🪙 <b>Монетка</b>\n"
         f"Баланс: <b>{bal}</b> XTR\n"
+        "Правила: Орёл 49.5%, Решка 49.5%, Ребро 1%.\n"
         "Выплаты: 1.75× (угаданная сторона), 8× (ребро).\n"
-        f"Ставка: {MIN_BET}-{MAX_BET} XTR.\n\n"
-        "1) Выбери сторону (Орёл/Решка/Ребро).\n"
+        f"Ставка от {MIN_BET} до {MAX_BET} XTR.\n\n"
+        "1) Выбери сторону.\n"
         "2) Отправь сумму ставки числом.",
         reply_markup=main_menu_kb(bal),
     )
@@ -164,13 +139,12 @@ async def cmd_start(m: Message):
 
 @dp.callback_query(F.data.startswith("side:"))
 async def choose_side(cq: CallbackQuery):
-    side = cq.data.split(":")[1]  # heads|tails|edge
+    side = cq.data.split(":")[1]  # heads|tails
     pending_choice[cq.from_user.id] = side
     await cq.answer("Сторона выбрана")
     bal = await get_balance(cq.from_user.id)
-    readable = {"heads": "Орёл", "tails": "Решка", "edge": "Ребро"}[side]
     await cq.message.edit_text(
-        f"Выбор: <b>{readable}</b>\n"
+        f"Выбор: <b>{'Орёл' if side=='heads' else 'Решка'}</b>\n"
         f"Введи сумму ставки ({MIN_BET}-{MAX_BET} XTR).",
         reply_markup=main_menu_kb(bal),
     )
@@ -184,8 +158,8 @@ async def place_bet(m: Message):
         await m.reply(f"Неверная сумма. Допустимо {MIN_BET}–{MAX_BET} XTR.")
         return
     side = pending_choice.get(uid)
-    if side not in ("heads", "tails", "edge"):
-        await m.reply("Сначала выбери: Орёл / Решка / Ребро.")
+    if side not in ("heads", "tails"):
+        await m.reply("Сначала выбери: Орёл или Решка.")
         return
 
     bal = await get_balance(uid)
@@ -193,7 +167,7 @@ async def place_bet(m: Message):
         await m.reply(f"Недостаточно средств ({bal} XTR). Нажми «Пополнить».")
         return
 
-    # Коммит-ревил
+    # commit-reveal
     server_seed = secrets.token_hex(32)
     client_seed = secrets.token_hex(16)
     nonce = 1
@@ -207,7 +181,7 @@ async def place_bet(m: Message):
     if prize:
         await add_balance(uid, prize)
 
-    # логируем бет
+    # логируем ставку
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT INTO bets(user_id, side, stake, server_seed, client_seed, nonce, commit_hash, outcome, payout)
@@ -222,7 +196,7 @@ async def place_bet(m: Message):
         f"🎲 <b>Результат:</b> {name}\n"
         f"Ставка: {stake} XTR → Выплата: <b>{prize}</b> XTR\n"
         f"Баланс: <b>{bal2}</b> XTR\n\n"
-        f"<b>Проверка честности</b>\n"
+        "<b>Проверка честности</b>\n"
         f"commit: <code>{commit}</code>\n"
         f"server_seed: <code>{server_seed}</code>\n"
         f"client_seed: <code>{client_seed}</code>\n"
@@ -231,13 +205,12 @@ async def place_bet(m: Message):
     )
 
 
-# ===================== Payments (Stars) =====================
+# ===================== Payments (Stars XTR) =====================
 
 @dp.callback_query(F.data.startswith("dep:"))
 async def quick_deposit(cq: CallbackQuery):
     amount = int(cq.data.split(":")[1])
     await cq.answer()
-    # Telegram Stars: provider_token пустой, валюта XTR
     await bot.send_invoice(
         chat_id=cq.message.chat.id,
         title="Пополнение баланса",
@@ -258,132 +231,11 @@ async def on_successful_payment(m: Message):
     uid = m.from_user.id
     amount = sp.total_amount  # в XTR
     await add_balance(uid, amount)
-
-    # логируем депозит для будущего refund
-    charge_id = getattr(sp, "telegram_payment_charge_id", None)
-    if charge_id:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO deposits(user_id, charge_id, amount, refunded) VALUES(?,?,?,0)",
-                (uid, charge_id, amount),
-            )
-            await db.commit()
-
     bal = await get_balance(uid)
     await m.answer(
         f"✅ Пополнение: +{amount} XTR\nБаланс: <b>{bal}</b> XTR",
         reply_markup=main_menu_kb(bal),
     )
-
-
-# ===================== Withdraw =====================
-
-@dp.callback_query(F.data == "withdraw")
-async def ask_withdraw(cq: CallbackQuery):
-    bal = await get_balance(cq.from_user.id)
-    await cq.answer()
-    await cq.message.answer(
-        f"💸 На балансе: <b>{bal}</b> XTR\n"
-        "Отправь сумму командой: <code>/withdraw 1000</code>\n"
-        "Автовыплата делается рефандом твоих депозитов Stars.\n"
-        "Выше внесённого — создастся заявка на ручной вывод."
-    )
-
-@dp.message(Command("withdraw"))
-async def withdraw_cmd(m: Message):
-    uid = m.from_user.id
-    parts = m.text.strip().split(maxsplit=1)
-    if len(parts) < 2 or not parts[1].isdigit():
-        await m.reply("Использование: /withdraw 1000")
-        return
-    amount = int(parts[1])
-
-    bal = await get_balance(uid)
-    if amount <= 0 or amount > bal:
-        await m.reply(f"Недостаточно средств. Баланс: {bal} XTR")
-        return
-
-    # читаем депозиты (FIFO)
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT id, charge_id, amount, refunded FROM deposits WHERE user_id=? ORDER BY ts ASC",
-            (uid,),
-        )
-        rows = await cur.fetchall()
-
-    to_refund = amount
-    auto_refunded = 0
-
-    for dep_id, charge_id, dep_amount, refunded in rows:
-        left = dep_amount - refunded
-        if left <= 0 or to_refund <= 0:
-            continue
-        chunk = min(left, to_refund)
-
-        try:
-            # Частичный рефанд Stars (может быть не поддержан — тогда fallback ниже)
-            await bot.refund_star_payment(
-                user_id=uid,
-                telegram_payment_charge_id=charge_id,
-                amount=chunk
-            )
-            new_refunded = refunded + chunk
-        except Exception:
-            # Если частичный не поддержан — пробуем рефандить весь платёж,
-            # только если он ещё не был рефанднут.
-            if refunded == 0 and to_refund >= dep_amount:
-                await bot.refund_star_payment(
-                    user_id=uid,
-                    telegram_payment_charge_id=charge_id
-                )
-                new_refunded = dep_amount
-                chunk = dep_amount
-            else:
-                continue
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE deposits SET refunded=? WHERE id=?", (new_refunded, dep_id))
-            await db.commit()
-
-        to_refund -= chunk
-        auto_refunded += chunk
-        if to_refund <= 0:
-            break
-
-    # списываем только реально выплаченное автоматически
-    if auto_refunded > 0:
-        await add_balance(uid, -auto_refunded)
-
-    rest = amount - auto_refunded
-    if rest > 0:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO withdrawals(user_id, amount, auto_refunded, status) VALUES(?,?,?,'pending')",
-                (uid, amount, auto_refunded),
-            )
-            await db.commit()
-        await m.reply(
-            f"✅ Автовыплата Stars: {auto_refunded} XTR.\n"
-            f"📝 Остаток {rest} XTR отправлен администратору на ручной вывод."
-        )
-    else:
-        await m.reply(f"✅ Выплата Stars завершена: {auto_refunded} XTR.")
-
-
-# ===================== Admin test top-up =====================
-
-@dp.message(Command("give"))
-async def admin_give(m: Message):
-    if m.from_user.id != ADMIN_ID:
-        return
-    try:
-        amount = int(m.text.split(maxsplit=1)[1])
-    except Exception:
-        await m.reply("Использование: /give 10000")
-        return
-    await add_balance(m.from_user.id, amount)
-    bal = await get_balance(m.from_user.id)
-    await m.reply(f"Начислено {amount} XTR. Баланс: {bal} XTR")
 
 
 # ===================== Run =====================
@@ -392,7 +244,7 @@ async def main():
     await db_init()
     await dp.start_polling(bot)
 
-# ---- keep-alive для Render Web Service (порт 8080) ----
+# --- Flask keep-alive для Render Web Service (порт 8080) ---
 import threading
 from flask import Flask
 def keep_alive():
@@ -402,7 +254,7 @@ def keep_alive():
         return "Bot is running"
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
 keep_alive()
-# --------------------------------------------------------
+# ------------------------------------------------------------
 
 if __name__ == "__main__":
     asyncio.run(main())
