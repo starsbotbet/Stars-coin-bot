@@ -1,9 +1,0 @@
-services:
-  - type: worker
-    name: stars-coin-bot
-    env: python
-    plan: free
-    region: oregon
-    runtime: python3.11
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python bot.py
