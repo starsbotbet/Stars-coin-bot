@@ -1,0 +1,13 @@
+app = "stars-coin-bot-ru"   # поменяй на уникальное имя (латиница, тире)
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DB_PATH = "/data/bank.sqlite"
+  PORT = "8080"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
