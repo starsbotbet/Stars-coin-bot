@@ -1,20 +1,56 @@
-name: Deploy to Fly.io
+name: Fly Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  # ЗАДАЙ свои значения ниже:
+  FLY_APP: "stars-coin-bot-ru-8591"   # имя приложения на Fly (любой уникальный слуг)
+  FLY_REGION: "waw"                   # ближайший регион: waw (Варшава), fra (Франкфурт), arn (Стокгольм) и т.д.
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@v1
-      - name: Deploy to Fly
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      # 1) Создаём приложение, если его ещё нет
+      - name: Ensure app exists
         run: |
-          flyctl secrets set BOT_TOKEN="$BOT_TOKEN" --stage || true
-          flyctl deploy --remote-only
+          set -e
+          if ! flyctl apps list | awk '{print $1}' | grep -qx "$FLY_APP"; then
+            echo "App $FLY_APP not found. Creating…"
+            flyctl apps create "$FLY_APP"
+          else
+            echo "App $FLY_APP already exists."
+          fi
+
+      # 2) Volume для SQLite (если ещё нет)
+      - name: Ensure volume "data" exists
+        run: |
+          set -e
+          if ! flyctl volumes list -a "$FLY_APP" | awk '{print $1}' | grep -qx "data"; then
+            echo "Volume data not found. Creating…"
+            flyctl volumes create data -a "$FLY_APP" --region "$FLY_REGION" --size 1
+          else
+            echo "Volume data already exists."
+          fi
+
+      # 3) Секрет BOT_TOKEN
+      - name: Set BOT_TOKEN secret
+        run: |
+          flyctl secrets set -a "$FLY_APP" BOT_TOKEN='${{ secrets.BOT_TOKEN }}'
+
+      # 4) Деплой (Dockerfile в корне)
+      - name: Deploy
+        run: |
+          flyctl deploy -a "$FLY_APP" --remote-only
