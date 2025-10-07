@@ -1,5 +1,5 @@
 # ВАЖНО: замени имя приложения на уникальное перед деплоем!
-app = "CHANGE_ME_APP_NAME"
+app = "stars-coin-bot-ru-8591"
 
 [build]
   dockerfile = "Dockerfile"
