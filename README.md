@@ -7,7 +7,7 @@
    - `FLY_API_TOKEN` — токен из Fly.io (Dashboard → Account).
    - `BOT_TOKEN` — токен бота из BotFather.
 4. Сделай коммит в ветку `main` — деплой запустится автоматически (вкладка **Actions**).
-5. В Fly.io → приложение → **Volumes** создай volume `data` (1GB).
+5. В Fly.io → приожение → **Volumes** создай volume `data` (1GB).
 
 Бот:
 - Aiogram v3, ставки 100–5000 XTR, коэффициенты: Орёл/Решка 1.75×, Ребро 8×.
